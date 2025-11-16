@@ -21,16 +21,16 @@
   "hero": {
     "title": "Deep Research",
     "subtitle": "at Your Fingertips",
-    "description": "Meet DeerFlow, your personal Deep Research assistant. With powerful tools like search engines, web crawlers, Python and MCP services, it delivers instant insights, comprehensive reports, and even captivating podcasts.",
+    "description": "Meet ThesisFlow, your personal Deep Research assistant. With powerful tools like search engines, web crawlers, Python and MCP services, it delivers instant insights, comprehensive reports, and even captivating podcasts.",
     "footnote": "* DEER stands for Deep Exploration and Efficient Research."
   },
   "settings": {
-    "title": "DeerFlow Settings",
-    "description": "Manage your DeerFlow settings here.",
+    "title": "ThesisFlow Settings",
+    "description": "Manage your ThesisFlow settings here.",
     "addServers": "Add Servers",
     "cancel": "Cancel",
     "addNewMCPServers": "Add New MCP Servers",
-    "mcpConfigDescription": "DeerFlow uses the standard JSON MCP config to create a new server.",
+    "mcpConfigDescription": "ThesisFlow uses the standard JSON MCP config to create a new server.",
     "pasteConfigBelow": "Paste your config below and click \"Add\" to add new servers.",
     "add": "Add",
     "general": {
@@ -88,13 +88,13 @@
   },
   "chat": {
     "page": {
-      "loading": "Loading DeerFlow...",
+      "loading": "Loading ThesisFlow...",
       "welcomeUser": "Welcome, {username}",
       "starOnGitHub": "Star DeerFlow on GitHub"
     },
     "welcome": {
       "greeting": "👋 Hello, there!",
-      "description": "Welcome to 🦌 DeerFlow, a deep research assistant built on cutting-edge language models, helps you search on web, browse information, and handle complex tasks."
+      "description": "Welcome to 🦌 ThesisFlow, a deep research assistant built on cutting-edge language models, helps you search on web, browse information, and handle complex tasks."
     },
     "conversationStarters": [
       "How many times taller is the Eiffel Tower than the tallest building in the world?",
