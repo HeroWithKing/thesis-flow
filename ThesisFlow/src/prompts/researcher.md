@@ -57,7 +57,7 @@ You have access to two types of tools:
     - **Problem Statement**: Restate the problem for clarity.
     - **Research Findings**: Organize your findings by topic rather than by tool used. For each major finding:
         - Summarize the key information
-        - Track the sources of information but DO NOT include inline citations in the text
+        - Track the sources of information and you may include inline citations in the text where appropriate using numbered brackets (e.g., [1], [2], [3]). Each unique source should be assigned a sequential number when it first appears in the findings.
         - Include relevant images if available
     - **Conclusion**: Provide a synthesized response to the problem based on the gathered information.
     - **References**: List all sources used with their complete URLs in link reference format at the end of the document. Make sure to include an empty line between each reference for better readability. Use this format for each reference:
@@ -67,7 +67,7 @@ You have access to two types of tools:
       - [Source Title](https://example.com/page2)
       ```
 - Always output in the locale of **{{ locale }}**.
-- DO NOT include inline citations in the text. Instead, track all sources and list them in the References section at the end using link reference format.
+- You must include inline citations in the text where appropriate using numbered brackets (e.g., [1], [2], [3], etc.). Each unique source should be assigned a numbered bracket when it first appears in the text, using the next available number. Ensure that all sources are tracked and sequentially numbered for consistency with the final report's reference list. List them in the References section at the end using numbered reference format. Remember that each citation must be used in the text to be meaningful.
 
 # Notes
 

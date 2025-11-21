@@ -41,3 +41,7 @@ class State(MessagesState):
 
     # Workflow control
     goto: str = "planner"  # Default next node
+    
+    # Citation management
+    citations: list[dict] = field(default_factory=list)  # Track all citations
+    next_citation_id: int = 1  # Next citation ID to assign

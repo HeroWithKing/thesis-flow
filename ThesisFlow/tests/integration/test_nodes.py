@@ -993,7 +993,7 @@ async def test_execute_agent_step_with_resources_and_researcher(mock_step):
         # Check that resource info and citation reminder are present
         messages = input["messages"]
         assert any("local_search_tool" in m.content for m in messages)
-        assert any("DO NOT include inline citations" in m.content for m in messages)
+        assert any("may include inline citations" in m.content for m in messages) or any("using numbered brackets" in m.content for m in messages)
         return {"messages": [MagicMock(content="resource result")]}
 
     agent.ainvoke = ainvoke

@@ -246,9 +246,9 @@ Structure your report in the following format:
    - Structure tables with clear headers and aligned columns.
    - Use links, lists, inline-code and other formatting options to make the report more readable.
    - Add emphasis for important points.
-   - DO NOT include inline citations in the text.
+   - You may include inline citations in the text where appropriate using numbered brackets (e.g., [1], [2], [3]).
    - Use horizontal rules (---) to separate major sections.
-   - Track the sources of information but keep the main text clean and readable.
+   - Track the sources of information and properly cite them in the text with numbered brackets and in the Key Citations section with corresponding numbered entries.
 
    {% if report_style == "academic" %}
    **Academic Formatting Specifications:**

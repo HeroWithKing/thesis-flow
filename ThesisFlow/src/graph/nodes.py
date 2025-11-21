@@ -716,10 +716,39 @@ def reporter_node(state: State, config: RunnableConfig):
     invoke_messages = apply_prompt_template("reporter", input_, configurable, input_.get("locale", "en-US"))
     observations = state.get("observations", [])
 
+    # Get the citations from state to include in the prompt
+    citations = state.get("citations", [])
+    
+    # Ensure citations are numbered sequentially before passing to reporter
+    # Sort citations by their current ID to maintain order
+    citations.sort(key=lambda x: x['id'])
+    
+    # Renumber citations sequentially starting from 1
+    renumbered_citations = []
+    for idx, citation in enumerate(citations):
+        renumbered_citation = {
+            'id': idx + 1,
+            'title': citation['title'],
+            'url': citation['url']
+        }
+        renumbered_citations.append(renumbered_citation)
+    
+    # Update the citations in state with renumbered ones
+    citations = renumbered_citations
+    
+    # Format citations for the message
+    formatted_citations = []
+    for citation in citations:
+        formatted_citations.append(f"- [{citation['id']}] {citation['title']} ({citation['url']})")
+    
+    citations_text = "\n".join(formatted_citations)
+    if citations_text:
+        citations_text = f"\n\nAvailable Citations:\n{citations_text}\n\n"
+
     # Add a reminder about the new report format, citation style, and table usage
     invoke_messages.append(
         HumanMessage(
-            content="IMPORTANT: Structure your report according to the format in the prompt. Remember to include:\n\n1. Key Points - A bulleted list of the most important findings\n2. Overview - A brief introduction to the topic\n3. Detailed Analysis - Organized into logical sections\n4. Survey Note (optional) - For more comprehensive reports\n5. Key Citations - List all references at the end\n\nFor citations, DO NOT include inline citations in the text. Instead, place all citations in the 'Key Citations' section at the end using the format: `- [Source Title](URL)`. Include an empty line between each citation for better readability.\n\nPRIORITIZE USING MARKDOWN TABLES for data presentation and comparison. Use tables whenever presenting comparative data, statistics, features, or options. Structure tables with clear headers and aligned columns. Example table format:\n\n| Feature | Description | Pros | Cons |\n|---------|-------------|------|------|\n| Feature 1 | Description 1 | Pros 1 | Cons 1 |\n| Feature 2 | Description 2 | Pros 2 | Cons 2 |",
+            content=f"IMPORTANT: Structure your report according to the format in the prompt. Remember to include:\n\n1. Key Points - A bulleted list of the most important findings\n2. Overview - A brief introduction to the topic\n3. Detailed Analysis - Organized into logical sections\n4. Survey Note (optional) - For more comprehensive reports\n5. Key Citations - List all references at the end{citations_text}\nFor citations, you must use inline citations in the text where appropriate using numbered brackets (e.g., [1], [2], [3], [4], etc.) that correspond exactly to the references listed in the 'Key Citations' section. Each numbered citation in the text must have a matching entry in the reference list, and vice versa. You MUST incorporate every available citation into the appropriate sections of your report content, ensuring that no citations are left unused. Use the format: `- [1] Source Title (URL)` in the Key Citations section. Include an empty line between each citation for better readability.\n\nPRIORITIZE USING MARKDOWN TABLES for data presentation and comparison. Use tables whenever presenting comparative data, statistics, features, or options. Structure tables with clear headers and aligned columns. Example table format:\n\n| Feature | Description | Pros | Cons |\n|---------|-------------|------|------|\n| Feature 1 | Description 1 | Pros 1 | Cons 1 |\n| Feature 2 | Description 2 | Pros 2 | Cons 2 |",
             name="system",
         )
     )
@@ -745,7 +774,49 @@ def reporter_node(state: State, config: RunnableConfig):
     response_content = response.content
     logger.info(f"reporter response: {response_content}")
 
-    return {"final_report": response_content}
+    # Process the response to ensure citation numbers in the text match the final citation list
+    import re
+    
+    # Extract the citations section from the response (everything after "Key Citations" or "References")
+    updated_response_content = response_content
+    citations_section_pattern = r'(## Key Citations\s*\n(?:- \[\d+\].*?\(.*?\)\s*\n?)+)'
+    citations_section_matches = re.search(citations_section_pattern, response_content, re.IGNORECASE)
+    
+    if citations_section_matches:
+        citations_section = citations_section_matches.group(1)
+        # Find all citations in the format "[number] Title (URL)"
+        citation_pattern = r'- \[(\d+)\]\s*(.*?)\((.*?)\)'
+        found_citations = re.findall(citation_pattern, citations_section)
+        
+        # Create a mapping between old citation numbers and new sequential numbers
+        citation_mapping = {}
+        for idx, (old_num, title, url) in enumerate(found_citations):
+            new_num = str(idx + 1)
+            citation_mapping[old_num] = new_num
+        
+        # Replace citation numbers in the entire response content
+        for old_num, new_num in citation_mapping.items():
+            # Replace in-text citations [old_num] with [new_num]
+            updated_response_content = re.sub(
+                r'\[' + re.escape(old_num) + r'\]', 
+                f'[{new_num}]', 
+                updated_response_content
+            )
+        
+        # Update the citations section with sequential numbering
+        for idx, (old_num, title, url) in enumerate(found_citations):
+            old_citation = f'- [{old_num}] {title}({url})'
+            new_citation = f'- [{idx + 1}] {title}({url})'
+            # Handle variations in spacing
+            updated_response_content = re.sub(
+                r'- \[' + re.escape(old_num) + r'\]\s*' + re.escape(title) + r'\(' + re.escape(url) + r'\)',
+                new_citation,
+                updated_response_content
+            )
+    
+    # Update the state with the final report and renumbered citations
+    return {"final_report": updated_response_content, "citations": citations}
+
 
 
 def research_team_node(state: State):
@@ -819,9 +890,22 @@ async def _execute_agent_step(
                 )
             )
 
+        # Create a system message that uses the state's citation management
+        next_citation_id = state.get("next_citation_id", 1)
+        citations = state.get("citations", [])
+        
+        # Format existing citations for the message
+        formatted_citations = []
+        for citation in citations:
+            formatted_citations.append(f"- [{citation['id']}] {citation['title']} ({citation['url']})")
+        
+        citation_format = "\n\n".join(formatted_citations)
+        if citation_format:
+            citation_format = "\n\nCurrent citations:\n" + citation_format
+        
         agent_input["messages"].append(
             HumanMessage(
-                content="IMPORTANT: DO NOT include inline citations in the text. Instead, track all sources and include a References section at the end using link reference format. Include an empty line between each citation for better readability. Use this format for each reference:\n- [Source Title](URL)\n\n- [Another Source](URL)",
+                content=f"IMPORTANT: You may include inline citations in the text where appropriate using numbered brackets (e.g., [{next_citation_id}], [{next_citation_id+1}], [{next_citation_id+2}], etc.) AND/OR track all sources and include a References section at the end using numbered reference format. Include an empty line between each citation for better readability. Use this format for each reference:\n- [{next_citation_id}] Source Title (URL)\n\n- [{next_citation_id+1}] Another Source (URL){citation_format}",
                 name="system",
             )
         )
@@ -904,6 +988,105 @@ async def _execute_agent_step(
     
     logger.debug(f"{agent_name.capitalize()} full response: {response_content}")
 
+    # Parse citations from the response content if this is a researcher agent
+    import re
+    current_citations = state.get("citations", [])
+    next_citation_id = state.get("next_citation_id", 1)
+    
+    # Look for references section in the response (this is where new citations are defined)
+    references_pattern = r'-\s*\[(\d+)\]\s*([^\(\n]+)\(([^\)\n]+)\)'
+    references_matches = re.findall(references_pattern, response_content)
+    
+    # Update citations based on found references
+    new_citations_added = []
+    for ref_id, title, url in references_matches:
+        ref_id = int(ref_id)
+        # Check if this citation already exists
+        exists = False
+        for citation in current_citations:
+            if citation['id'] == ref_id:
+                exists = True
+                break
+        if not exists:
+            new_citation = {
+                'id': ref_id,
+                'title': title.strip(),
+                'url': url.strip()
+            }
+            current_citations.append(new_citation)
+            new_citations_added.append(new_citation)
+            # Update next_citation_id if needed
+            if ref_id >= next_citation_id:
+                next_citation_id = ref_id + 1
+
+    # Renumber all citations to ensure they are sequential and update the response content accordingly
+    # Sort all citations by their original ID
+    current_citations.sort(key=lambda x: x['id'])
+    
+    # Create a mapping from old IDs to new sequential IDs
+    id_mapping = {}
+    for idx, citation in enumerate(current_citations):
+        old_id = citation['id']
+        new_id = idx + 1
+        id_mapping[old_id] = new_id
+        citation['id'] = new_id  # Update the citation's ID to be sequential
+    
+    # Update next_citation_id to be one more than the highest citation ID
+    next_citation_id = len(current_citations) + 1
+    
+    # Split content into main body and citations section to handle them separately
+    # Find the citations section (everything after "Key Citations" or "References")
+    citations_section_start = -1
+    lines = response_content.split('\n')
+    main_content_lines = []
+    citations_lines = []
+    
+    for i, line in enumerate(lines):
+        if 'Key Citations' in line or 'References' in line or '## Citations' in line:
+            citations_section_start = i
+            main_content_lines = lines[:i]
+            citations_lines = lines[i:]
+            break
+    
+    if citations_section_start == -1:
+        # No citations section found, treat entire content as main content
+        main_content = response_content
+        citations_section = ""
+    else:
+        main_content = '\n'.join(main_content_lines)
+        citations_section = '\n'.join(citations_lines)
+    
+    # Update citation numbers in the main content (text citations)
+    updated_main_content = main_content
+    for old_id, new_id in sorted(id_mapping.items(), key=lambda x: x[0], reverse=True):  # Reverse order to avoid conflicts when replacing
+        # Replace in-text citations [old_id] with [new_id]
+        # Use word boundaries to avoid replacing partial matches in URLs or other text
+        updated_main_content = re.sub(
+            r'(?<!\w)\[' + re.escape(str(old_id)) + r'\](?!\w)',
+            f'[{new_id}]',
+            updated_main_content
+        )
+    
+    # Update citation numbers in the citations section
+    updated_citations_section = citations_section
+    for old_id, new_id in id_mapping.items():
+        # Replace citation entries in the format "- [old_id] Title (URL)" with "- [new_id] Title (URL)"
+        pattern = r'(-\s*\[' + re.escape(str(old_id)) + r'\]\s*[^\n]*?\([^\n]*?\)\n?)'
+        matches = re.findall(pattern, updated_citations_section)
+        for match in matches:
+            # Extract the title and URL part from the match
+            parts = match.split(f'[{old_id}]', 1)
+            if len(parts) > 1:
+                title_and_url = parts[1]  # This includes the space, title, and (URL)
+                new_citation = f'- [{new_id}]{title_and_url}'
+                # Replace only this specific occurrence
+                updated_citations_section = updated_citations_section.replace(match, new_citation, 1)
+    
+    # Combine the updated main content and citations section
+    response_content = updated_main_content
+    if citations_section_start != -1:
+        response_content += '\n' + updated_citations_section
+
     # Update the step with the execution result
     current_step.execution_res = response_content
     logger.info(f"Step '{current_step.title}' execution completed by {agent_name}")
@@ -917,6 +1100,8 @@ async def _execute_agent_step(
                 )
             ],
             "observations": observations + [response_content],
+            "citations": current_citations,
+            "next_citation_id": next_citation_id,
             **preserve_state_meta_fields(state),
         },
         goto="research_team",
