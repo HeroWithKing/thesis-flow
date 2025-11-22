@@ -114,7 +114,7 @@
     ],
     "compounds": [
         {
-            "name": "Launch Deerflow",
+            "name": "Launch Thesisflow",
             "configurations": ["Debug: python server", "Debug: nodejs web"]
         }
     ]

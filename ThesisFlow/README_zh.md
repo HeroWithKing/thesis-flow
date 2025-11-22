@@ -536,6 +536,69 @@ uv run main.py
 # 查看所有可用选项
 uv run main.py --help
 ```
+```
+## 研究计划生成功能
+
+### 使用方法
+```
+
+python
+
+from src.prompt_enhancer.graph import build_graph
+
+# 创建研究计划
+
+graph = build_graph()
+
+result = graph.invoke({
+
+"prompt": "您的研究主题",
+
+"report_style": "research_plan", # 关键参数
+
+"locale": "zh-CN", # 可选：zh-CN 或 en-US
+
+"context": "额外的研究背景信息"
+
+})
+
+```
+### 输出格式
+研究计划以结构化JSON格式返回，包含：
+- 研究主题和背景分析
+- 关键研究问题
+- 文献调研计划
+- 创新点生成框架
+- 报告结构设计
+```
+
+## 验证步骤
+
+1. **运行测试脚本**：
+    
+
+```
+python test_research_planner.py
+```
+
+1. **检查日志输出**：确保没有错误信息
+    
+2. **验证输出格式**：检查生成的JSON结构是否符合预期
+    
+3. **测试中英文支持**：分别使用`zh-CN`和`en-US`locale测试
+    
+
+## 故障排除
+
+如果遇到问题，检查以下方面：
+
+1. **模板文件路径**：确保模板文件在正确目录
+    
+2. **导入路径**：检查所有import语句是否正确
+    
+3. **LLM配置**：确认research_planner的LLM配置正确
+    
+4. **JSON解析**：测试JSON提取逻辑是否健壮
 
 ### 交互模式
 

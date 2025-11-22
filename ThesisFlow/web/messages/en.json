@@ -16,7 +16,7 @@
     "placeholderWithRag": "What can I do for you? \nYou may refer to RAG resources by using @."
   },
   "header": {
-    "title": "DeerFlow"
+    "title": "ThesisFlow"
   },
   "hero": {
     "title": "Deep Research",
@@ -48,7 +48,7 @@
     },
     "mcp": {
       "title": "MCP Servers",
-      "description": "The Model Context Protocol boosts DeerFlow by integrating external tools for tasks like private domain searches, web browsing, food ordering, and more. Click here to",
+      "description": "The Model Context Protocol boosts ThesisFlow by integrating external tools for tasks like private domain searches, web browsing, food ordering, and more. Click here to",
       "learnMore": "learn more about MCP.",
       "enableDisable": "Enable/disable server",
       "deleteServer": "Delete server",
@@ -84,13 +84,13 @@
   "footer": {
     "quote": "Originated from Open Source, give back to Open Source.",
     "license": "Licensed under MIT License",
-    "copyright": "DeerFlow"
+    "copyright": "ThesisFlow"
   },
   "chat": {
     "page": {
       "loading": "Loading ThesisFlow...",
       "welcomeUser": "Welcome, {username}",
-      "starOnGitHub": "Star DeerFlow on GitHub"
+      "starOnGitHub": "Star ThesisFlow on GitHub"
     },
     "welcome": {
       "greeting": "👋 Hello, there!",
@@ -106,12 +106,12 @@
       "deepThinking": "Deep Thinking",
       "deepThinkingTooltip": {
         "title": "Deep Thinking Mode: {status}",
-        "description": "When enabled, DeerFlow will use reasoning model ({model}) to generate more thoughtful plans."
+        "description": "When enabled, ThesisFlow will use reasoning model ({model}) to generate more thoughtful plans."
       },
       "investigation": "Investigation",
       "investigationTooltip": {
         "title": "Investigation Mode: {status}",
-        "description": "When enabled, DeerFlow will perform a quick search before planning. This is useful for researches related to ongoing events and news."
+        "description": "When enabled, ThesisFlow will perform a quick search before planning. This is useful for researches related to ongoing events and news."
       },
       "enhancePrompt": "Enhance prompt with AI",
       "on": "On",
@@ -146,9 +146,9 @@
     },
     "messages": {
       "replaying": "Replaying",
-      "replayDescription": "DeerFlow is now replaying the conversation...",
+      "replayDescription": "ThesisFlow is now replaying the conversation...",
       "replayHasStopped": "The replay has been stopped.",
-      "replayModeDescription": "You're now in DeerFlow's replay mode. Click the \"Play\" button on the right to start.",
+      "replayModeDescription": "You're now in ThesisFlow's replay mode. Click the \"Play\" button on the right to start.",
       "play": "Play",
       "fastForward": "Fast Forward",
       "demoNotice": "* This site is for demo purposes only. If you want to try your own question, please",
@@ -165,7 +165,7 @@
   "landing": {
     "caseStudies": {
       "title": "Case Studies",
-      "description": "See DeerFlow in action through replays.",
+      "description": "See ThesisFlow in action through replays.",
       "clickToWatch": "Click to watch replay",
       "cases": [
         {
@@ -204,7 +204,7 @@
     },
     "coreFeatures": {
       "title": "Core Features",
-      "description": "Find out what makes DeerFlow effective.",
+      "description": "Find out what makes ThesisFlow effective.",
       "features": [
         {
           "name": "Dive Deeper and Reach Wider",
@@ -233,7 +233,7 @@
       "description": "Experience the agent teamwork with our Supervisor + Handoffs design pattern."
     },
     "joinCommunity": {
-      "title": "Join the DeerFlow Community",
+      "title": "Join the ThesisFlow Community",
       "description": "Contribute brilliant ideas to shape the future of DeerFlow. Collaborate, innovate, and make impacts.",
       "contributeNow": "Contribute Now"
     }
