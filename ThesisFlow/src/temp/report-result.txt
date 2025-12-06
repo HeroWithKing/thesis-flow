@@ -1,0 +1,81 @@
+Research Plan for AI4S in Life Science
+Key Points
+A knowledge - enhanced disease diagnosis method using prompt learning and BERT integration is a successful AI4S case in life science [2].
+The project aimed to enhance language models' disease - diagnosis capabilities by leveraging external clinical knowledge [2].
+Experiments on three public datasets (CHIP - CTC, IMCS - V2 - NER, and KUAKE - QTR) showed significant performance improvements [2].
+Due to having only one case, commonalities and differences in technology application cannot be analyzed currently.
+Overview
+The integration of artificial intelligence for science (AI4S) in the life science field holds great promise for advancing research and applications, particularly in disease diagnosis. This research focuses on understanding successful AI4S cases in life science, specifically analyzing the technologies employed in a knowledge - enhanced disease diagnosis method. By examining such cases, we can gain insights into how AI technologies can be effectively applied to solve real - world problems in life science.
+
+Detailed Analysis
+Part 1: Core Content Summary
+Essential Definition
+The knowledge - enhanced disease diagnosis method is an AI4S approach that combines prompt learning and BERT integration. Prompt learning is a natural language processing (NLP) technique that enables pre - trained language models to adapt to specific tasks through carefully designed prompts. BERT is a powerful NLP model that, when integrated with prompt learning, helps in better analyzing and understanding medical data for disease diagnosis [2].
+
+Core Methods
+The core method involves retrieving structured knowledge from external knowledge graphs related to clinical cases, encoding this knowledge, and injecting it into prompt templates. This combined approach enhances the language model's understanding and reasoning capabilities for disease diagnosis [2].
+
+Key Results
+Experiments on three public datasets (CHIP - CTC, IMCS - V2 - NER, and KUAKE - QTR) demonstrated that the proposed method significantly outperformed other methods, indicating its effectiveness in disease diagnosis [2].
+
+Main Conclusions
+The combination of prompt learning, BERT, and knowledge injection is effective for disease diagnosis tasks. It can leverage external clinical knowledge to improve the disease - diagnosis capabilities of language models [2].
+
+Innovation Points
+The innovation lies in the integration of prompt learning and BERT with external knowledge graphs. This approach enhances the model's ability to use structured clinical knowledge, which was not fully explored in previous disease diagnosis methods [2].
+
+Part 2: Technical Analysis and Comparisons
+Method Comparison
+There is no comparison with other methods in the provided information. However, the significant performance improvement on public datasets suggests that the combination of prompt learning and BERT integration is more effective than traditional methods.
+
+Performance Comparison
+The proposed method outperformed on three public datasets (CHIP - CTC, IMCS - V2 - NER, and KUAKE - QTR), indicating its superior performance in disease diagnosis compared to other unnamed methods [2].
+
+Technical Evolution
+The integration of prompt learning and BERT with external knowledge graphs represents an evolution in disease diagnosis methods. It moves beyond traditional approaches by leveraging structured clinical knowledge to enhance the model's understanding and reasoning capabilities.
+
+Part 3: Literature Navigation
+Category	arXiv ID/Reference	Title	Core Contribution	Key Result	Tags
+AI4S in Life Science	[2]	
+A Knowledge - Enhanced Disease Diagnosis Method Based on Prompt Learning and BERT Integration
+Propose a knowledge - enhanced disease diagnosis method using prompt learning and BERT integration with external knowledge graphs	Significantly outperformed on three public datasets (CHIP - CTC, IMCS - V2 - NER, and KUAKE - QTR)	Disease Diagnosis, Prompt Learning, BERT, AI4S
+Part 4: Research Gaps and Opportunities
+Empirical Gaps
+The analysis is based on only one case, so the generalizability of the results is limited. More cases are needed to confirm the effectiveness of the method across different scenarios.
+The limitations of the method are unknown as the provided information does not mention them.
+Theoretical Gaps
+There is a lack of theoretical understanding of why the combination of prompt learning, BERT, and external knowledge graphs is so effective in disease diagnosis.
+The optimal way to retrieve, encode, and inject knowledge from external knowledge graphs needs further theoretical exploration.
+Extension Gaps
+The method can be extended to other areas of life science, such as drug discovery and genomics.
+The application of this method in real - world clinical settings needs further investigation.
+Research Questions Template
+How can the method be optimized for different types of diseases and datasets?
+What are the potential limitations of the method, and how can they be addressed?
+How can the method be extended to other life science domains?
+Literature Navigation
+Category	arXiv ID/Reference	Title	Core Contribution	Key Result	Tags
+AI4S in Life Science	[2]	
+A Knowledge - Enhanced Disease Diagnosis Method Based on Prompt Learning and BERT Integration
+Propose a knowledge - enhanced disease diagnosis method using prompt learning and BERT integration with external knowledge graphs	Significantly outperformed on three public datasets (CHIP - CTC, IMCS - V2 - NER, and KUAKE - QTR)	Disease Diagnosis, Prompt Learning, BERT, AI4S
+Research Gaps & Opportunities
+Empirical Gaps
+With only one case available, the generalizability of the disease - diagnosis method's effectiveness is questionable. More cases are required to validate its performance across diverse scenarios.
+The lack of information on the method's limitations hinders a comprehensive empirical understanding.
+Theoretical Gaps
+There is a dearth of theoretical explanations for the success of combining prompt learning, BERT, and external knowledge graphs in disease diagnosis.
+The theoretical basis for the optimal retrieval, encoding, and injection of knowledge from external knowledge graphs needs to be established.
+Extension Gaps
+The application of this method can be extended to other life - science domains such as drug discovery and genomics.
+Its implementation in real - world clinical settings has not been thoroughly explored.
+Research Questions Template
+How can the disease - diagnosis method be optimized for different disease types and datasets?
+What are the potential limitations of the method, and how can they be mitigated?
+How can the method be effectively extended to other life - science fields?
+Key Citations
+[1] 
+Light - X: Generative 4D Video Rendering with Camera and Illumination Control
+[2] 
+A Knowledge - Enhanced Disease Diagnosis Method Based on Prompt Learning and BERT Integration
+[3] 
+The Universal Weight Subspace Hypothesis

@@ -25,6 +25,66 @@ repl: Optional[PythonREPL] = PythonREPL() if _is_python_repl_enabled() else None
 logger = logging.getLogger(__name__)
 
 
+def _clean_code(code: str) -> str:
+    """
+    Clean and fix common code formatting issues that might cause indentation errors.
+    """
+    import re
+    
+    # Split code into lines
+    lines = code.split('\n')
+    cleaned_lines = []
+    i = 0
+    
+    while i < len(lines):
+        line = lines[i]
+        stripped_line = line.strip()
+        
+        # If line is empty, just add it
+        if not stripped_line:
+            cleaned_lines.append(line)
+            i += 1
+            continue
+        
+        # Check if this line might be a continuation of the previous line
+        # Look for operators at the beginning of the line (indicating a broken expression)
+        if stripped_line.startswith(('+ ', '- ', '* ', '/ ', '// ', '% ', '** ', '& ', '| ', '^ ', '<< ', '>> ', 'and ', 'or ')):
+            # This line is likely a continuation of the previous line
+            # We need to merge it with the previous line
+            if cleaned_lines:
+                prev_line = cleaned_lines.pop()
+                # Join the previous line with the current line (removing the leading operator space)
+                merged_line = prev_line.rstrip() + ' ' + stripped_line.lstrip()
+                cleaned_lines.append(merged_line)
+            else:
+                # If there's no previous line, just add the current line
+                cleaned_lines.append(line)
+        elif (stripped_line.endswith(('+', '-', '*', '/', '//', '%', '**', '&', '|', '^', '<<', '>>', 'and', 'or')) or
+              stripped_line.endswith(('+\\', '-\\', '*\\', '/\\', '//\\', '%\\', '**\\', '&\\', '|\\', '^\\', '<<\\', '>>\\'))):
+            # This line ends with an operator, likely to be continued in next line
+            # We'll handle this together with the next line
+            current_line = line.rstrip()
+            i += 1
+            # Keep collecting continuation lines
+            while i < len(lines):
+                next_line = lines[i].strip()
+                if next_line.startswith(('+ ', '- ', '* ', '/ ', '// ', '% ', '** ', '& ', '| ', '^ ', '<< ', '>> ', 'and ', 'or ')):
+                    # This is a continuation, merge it
+                    current_line += ' ' + next_line.lstrip()
+                    i += 1
+                else:
+                    break
+            cleaned_lines.append(current_line)
+            continue  # Skip incrementing i since we already did it in the loop
+        else:
+            # Normal line, add as is
+            cleaned_lines.append(line)
+        
+        i += 1
+    
+    return '\n'.join(cleaned_lines)
+
+
 @tool
 @log_io
 def python_repl_tool(
@@ -46,18 +106,26 @@ def python_repl_tool(
         logger.error(error_msg)
         return f"Error executing code:\n```python\n{code}\n```\nError: {error_msg}"
 
+    # Clean the code to fix common formatting issues
+    cleaned_code = _clean_code(code)
+    
     logger.info("Executing Python code")
     try:
-        result = repl.run(code)
+        result = repl.run(cleaned_code)
         # Check if the result is an error message by looking for typical error patterns
         if isinstance(result, str) and ("Error" in result or "Exception" in result):
             logger.error(result)
-            return f"Error executing code:\n```python\n{code}\n```\nError: {result}"
+            return f"Error executing code:\n```python\n{cleaned_code}\n```\nError: {result}"
         logger.info("Code execution successful")
+    except SyntaxError as e:
+        # Handle specific syntax errors like unterminated string literals
+        error_msg = f"SyntaxError: {str(e)}"
+        logger.error(error_msg)
+        return f"Error executing code:\n```python\n{cleaned_code}\n```\nError: {error_msg}"
     except BaseException as e:
         error_msg = repr(e)
         logger.error(error_msg)
-        return f"Error executing code:\n```python\n{code}\n```\nError: {error_msg}"
+        return f"Error executing code:\n```python\n{cleaned_code}\n```\nError: {error_msg}"
 
-    result_str = f"Successfully executed:\n```python\n{code}\n```\nStdout: {result}"
+    result_str = f"Successfully executed:\n```python\n{cleaned_code}\n```\nStdout: {result}"
     return result_str
