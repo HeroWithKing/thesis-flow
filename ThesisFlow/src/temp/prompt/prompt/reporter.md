@@ -244,36 +244,7 @@ Structure your report in the following format:
    - This section is optional for shorter reports.
    {% endif %}
 
-6. **Academic Analysis Structure** (when dealing with academic papers or research)
-   - **Paper Metadata Extraction**: Extract and present key metadata from academic papers
-     - Title, Authors, Publication Year, Venue/Journal
-     - Abstract and Keywords
-     - Main Contributions
-     - Methodology
-     - Datasets Used
-     - Performance Results
-     - Limitations and Future Work
-   - **Citation Network Analysis**: Analyze relationships between papers
-     - Research foundations and building blocks
-     - Influence scoring and citation patterns
-     - Academic genealogy and research trajectory
-     - Impact assessment and key contributors
-   - **Technical Breakdown**: Deep dive into technical components
-     - Problem statement and research questions
-     - Solution architecture and system design
-     - Core algorithms and mathematical formulations
-     - System components and their dependencies
-     - Experimental validation approach
-     - Performance metrics and benchmarks
-     - Implementation complexity analysis
-   - **Innovation Graph Construction**: Map technological innovations
-     - Innovation nodes with titles and descriptions
-     - Technical novelty and application domains
-     - Prerequisites and constraints
-     - Future potential and impact assessment
-     - Relationship mapping between innovations
-
-7. **Key Citations**
+6. **Key Citations**
    - List all references at the end in link reference format.
    - Include an empty line between each citation for better readability.
    - Format: `- [Source Title](URL)` or for literature analysis: `- [1] Source Title (URL)`

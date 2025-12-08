@@ -45,3 +45,9 @@ class State(MessagesState):
     # Citation management
     citations: list[dict] = field(default_factory=list)  # Track all citations
     next_citation_id: int = 1  # Next citation ID to assign
+    
+    # Search enhancement fields
+    search_history: list[dict] = field(default_factory=list)  # Search history with queries and results
+    search_quality_metrics: dict = field(default_factory=dict)  # Metrics for search quality evaluation
+    enhanced_search_results: list[dict] = field(default_factory=list)  # Enhanced search results with additional metadata
+    search_feedback: list[dict] = field(default_factory=list)  # Feedback on search results

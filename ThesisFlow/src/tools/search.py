@@ -24,6 +24,7 @@ from src.tools.decorators import create_logged_tool
 from src.tools.tavily_search.tavily_search_results_with_images import (
     TavilySearchWithImages,
 )
+from src.tools.arxiv_advanced import AiInspiredArxivToolWrapper
 
 logger = logging.getLogger(__name__)
 
@@ -90,13 +91,9 @@ def get_web_search_tool(max_search_results: int):
             ),
         )
     elif SELECTED_SEARCH_ENGINE == SearchEngine.ARXIV.value:
-        return LoggedArxivSearch(
-            name="web_search",
-            api_wrapper=ArxivAPIWrapper(
-                top_k_results=max_search_results,
-                load_max_docs=max_search_results,
-                load_all_available_meta=True,
-            ),
+        # Use the advanced AI-inspired arXiv search tool
+        return AiInspiredArxivToolWrapper(
+            max_search_results=max_search_results
         )
     elif SELECTED_SEARCH_ENGINE == SearchEngine.SEARX.value:
         return LoggedSearxSearch(

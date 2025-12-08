@@ -4,7 +4,6 @@
 import json
 import logging
 import os
-from datetime import datetime
 from functools import partial
 from typing import Annotated, Literal
 
@@ -26,8 +25,8 @@ from src.tools import (
     get_web_search_tool,
     python_repl_tool,
 )
+
 from src.tools.search import LoggedTavilySearch
-from src.tools.query_optimizer import optimize_search_queries
 from src.utils.context_manager import ContextManager, validate_message_content
 from src.utils.json_utils import repair_json_output, sanitize_tool_response
 
@@ -229,15 +228,32 @@ def background_investigation_node(state: State, config: RunnableConfig):
             )
             background_investigation_results = []
     else:
-        background_investigation_results = get_web_search_tool(
+        searched_content = get_web_search_tool(
             configurable.max_search_results
         ).invoke(query)
+        
+        # Handle response from other search engines (arXiv, DuckDuckGo, etc.)
+        if isinstance(searched_content, str):
+            background_investigation_results = searched_content
+        elif isinstance(searched_content, list):
+            background_investigation_results = "\n\n".join(
+                [f"## {item.get('title', 'Untitled')}\n\n{item.get('content', 'No content')}" 
+                 if isinstance(item, dict) else str(item) for item in searched_content]
+            )
+        else:
+            background_investigation_results = str(searched_content)
     
-    return {
-        "background_investigation_results": json.dumps(
-            background_investigation_results, ensure_ascii=False
-        )
-    }
+    # Ensure consistent return format
+    if isinstance(background_investigation_results, str):
+        return {
+            "background_investigation_results": background_investigation_results
+        }
+    else:
+        return {
+            "background_investigation_results": json.dumps(
+                background_investigation_results, ensure_ascii=False
+            )
+        }
 
 
 def planner_node(
@@ -748,11 +764,9 @@ def reporter_node(state: State, config: RunnableConfig):
         citations_text = f"\n\nAvailable Citations:\n{citations_text}\n\n"
 
     # Add a reminder about the new report format, citation style, and table usage
-    # Enhanced academic structure guidance based on temp files
-    # Updated to emphasize core content and conclusions as per report_enhance_guide
     invoke_messages.append(
         HumanMessage(
-            content=f"IMPORTANT: Structure your report according to the enhanced format that emphasizes core content and conclusions. Remember to include:\n\n1. Key Points - A bulleted list of the most important findings (focus on core content and conclusions)\n2. Overview - A brief introduction to the topic\n3. Detailed Analysis - Organized into logical sections with emphasis on extracting core content, methods, results, and conclusions from research papers\n4. Literature Navigation - Present papers in a structured table format with core contributions and key results\n5. Research Gaps & Opportunities - Identify empirical, theoretical, and extension gaps\n6. Key Citations - List all references at the end{citations_text}\nFor citations, you must use inline citations in the text where appropriate using numbered brackets (e.g., [1], [2], [3], [4], etc.) that correspond exactly to the references listed in the 'Key Citations' section. Each numbered citation in the text must have a matching entry in the reference list, and vice versa. You MUST incorporate every available citation into the appropriate sections of your report content, ensuring that no citations are left unused. Use the format: `- [1] Source Title (URL)` in the Key Citations section. Include an empty line between each citation for better readability.\n\nPRIORITIZE USING MARKDOWN TABLES for data presentation and comparison. Use tables whenever presenting comparative data, statistics, features, or options. Structure tables with clear headers and aligned columns. Example table format:\n\n| Feature | Description | Pros | Cons |\n|---------|-------------|------|------|\n| Feature 1 | Description 1 | Pros 1 | Cons 1 |\n| Feature 2 | Description 2 | Pros 2 | Cons 2 |\n\nENHANCED REPORT STRUCTURE (based on report_enhance_guide.txt):\n- Part 1: Core Content Summary (40% of report) - Essential Definition, Core Methods, Key Results, Main Conclusions, Innovation Points\n- Part 2: Technical Analysis and Comparisons (25% of report) - Method Comparison, Performance Comparison, Technical Evolution\n- Part 3: Literature Navigation (20% of report) - Structured table with Category, arXiv ID/Reference, Title, Core Contribution, Key Result, and Tags\n- Part 4: Research Gaps and Opportunities (15% of report) - Empirical Gaps, Theoretical Gaps, Extension Gaps, Research Questions Template\n- Extract and present metadata from academic papers (Title, Authors, Abstract, Methodology, Main Contributions, Datasets Used, Performance Results, Limitations)\n- Analyze citation networks when relevant (Research foundations, Influence scoring, Academic genealogy)\n- Provide technical breakdowns (Problem statement, Solution architecture, Core algorithms, System components, Performance metrics, Implementation guidance)",
+            content=f"IMPORTANT: Structure your report according to the format in the prompt. Remember to include:\n\n1. Key Points - A bulleted list of the most important findings\n2. Overview - A brief introduction to the topic\n3. Detailed Analysis - Organized into logical sections\n4. Survey Note (optional) - For more comprehensive reports\n5. Key Citations - List all references at the end{citations_text}\nFor citations, you must use inline citations in the text where appropriate using numbered brackets (e.g., [1], [2], [3], [4], etc.) that correspond exactly to the references listed in the 'Key Citations' section. Each numbered citation in the text must have a matching entry in the reference list, and vice versa. You MUST incorporate every available citation into the appropriate sections of your report content, ensuring that no citations are left unused. Use the format: `- [1] Source Title (URL)` in the Key Citations section. Include an empty line between each citation for better readability.\n\nPRIORITIZE USING MARKDOWN TABLES for data presentation and comparison. Use tables whenever presenting comparative data, statistics, features, or options. Structure tables with clear headers and aligned columns. Example table format:\n\n| Feature | Description | Pros | Cons |\n|---------|-------------|------|------|\n| Feature 1 | Description 1 | Pros 1 | Cons 1 |\n| Feature 2 | Description 2 | Pros 2 | Cons 2 |",
             name="system",
         )
     )
@@ -1194,85 +1208,18 @@ async def _setup_and_execute_agent_step(
 async def researcher_node(
     state: State, config: RunnableConfig
 ) -> Command[Literal["research_team"]]:
-    """Researcher node that do research with enhanced search capabilities and academic analysis"""
+    """Researcher node that do research"""
     logger.info("Researcher node is researching.")
     logger.debug(f"[researcher_node] Starting researcher agent")
     
     configurable = Configuration.from_runnable_config(config)
     logger.debug(f"[researcher_node] Max search results: {configurable.max_search_results}")
     
-    # Create enhanced search tool with state information
-    search_tool = get_web_search_tool(configurable.max_search_results)
-    
-    # Update search history in state - initialize if not present
-    if "search_history" not in state:
-        state["search_history"] = []
-    if "search_quality_metrics" not in state:
-        state["search_quality_metrics"] = {}
-    if "enhanced_search_results" not in state:
-        state["enhanced_search_results"] = []
-    if "search_feedback" not in state:
-        state["search_feedback"] = []
-    
-    # Update search history in state
-    current_plan = state.get("current_plan")
-    if current_plan and hasattr(current_plan, 'steps'):
-        for step in current_plan.steps:
-            if step.need_search and step.title:
-                search_history_entry = {
-                    "query": step.title,
-                    "timestamp": datetime.now().isoformat(),
-                    "tool_used": search_tool.name if hasattr(search_tool, 'name') else "unknown"
-                }
-                state["search_history"].append(search_history_entry)
-    
-    # Include academic analysis tools when appropriate
-    tools = [search_tool, crawl_tool]
-    
-    # Add AI-inspired arXiv search tool for academic literature
-    from src.tools.arxiv_advanced import create_advanced_arxiv_tool
-    ai_arxiv_tool = create_advanced_arxiv_tool(max_search_results=configurable.max_search_results)
-    tools.append(ai_arxiv_tool)
-    
-    # Add literature summarizer tool for focused content extraction
-    from src.tools.literature_summarizer import create_literature_summarizer_tool
-    literature_summarizer_tool = create_literature_summarizer_tool()
-    tools.append(literature_summarizer_tool)
-    
-    # Add academic analysis tools for detailed paper analysis
-    from src.tools.academic_analysis import (
-        paper_metadata_extraction,
-        citation_analysis,
-        technical_breakdown,
-        innovation_graph,
-        paper_anonymize
-    )
-    
-    # Add academic tools to the tools list
-    academic_tools = [
-        paper_metadata_extraction,
-        citation_analysis,
-        technical_breakdown,
-        innovation_graph,
-        paper_anonymize
-    ]
-    tools.extend(academic_tools)
-    
+    tools = [get_web_search_tool(configurable.max_search_results), crawl_tool]
     retriever_tool = get_retriever_tool(state.get("resources", []))
     if retriever_tool:
         logger.debug(f"[researcher_node] Adding retriever tool to tools list")
         tools.insert(0, retriever_tool)
-    
-    # Add query optimization tool if enabled in configuration
-    try:
-        from src.config import load_yaml_config
-        config_data = load_yaml_config("conf.yaml")
-        search_config = config_data.get("search", {})
-        if search_config.get("auto_optimize_verbose_queries", True):
-            tools.append(optimize_search_queries)
-            logger.info("[researcher_node] Query optimization tool enabled")
-    except Exception as e:
-        logger.debug(f"[researcher_node] Could not load search config for optimization tool: {e}")
     
     logger.info(f"[researcher_node] Researcher tools count: {len(tools)}")
     logger.debug(f"[researcher_node] Researcher tools: {[tool.name if hasattr(tool, 'name') else str(tool) for tool in tools]}")
