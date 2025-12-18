@@ -4,13 +4,13 @@
 import json
 import logging
 import os
+import re
 from functools import partial
 from typing import Annotated, Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
-from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.types import Command, interrupt
 
 from src.agents import create_agent
@@ -25,12 +25,16 @@ from src.tools import (
     get_web_search_tool,
     python_repl_tool,
 )
-from src.tools.search import LoggedTavilySearch
-from src.tools.query_optimizer import optimize_search_queries
+from src.tools.academic_analysis import (
+    paper_metadata_extraction,
+    citation_analysis,
+    technical_breakdown,
+    innovation_graph,
+    paper_anonymize,
+)
 from src.utils.context_manager import ContextManager, validate_message_content
 from src.utils.json_utils import repair_json_output, sanitize_tool_response
 
-from ..config import SELECTED_SEARCH_ENGINE, SearchEngine
 from .types import State
 from .utils import (
     build_clarified_topic_from_history,
@@ -40,6 +44,104 @@ from .utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Citation Processing Utilities
+# ============================================================================
+class CitationProcessor:
+    """Handle citation extraction and renumbering with robust error handling."""
+    
+    # Patterns for citation processing
+    CITATIONS_SECTION_PATTERN = r'(## Key Citations\s*\n(?:- \[\d+\].*?\(.*?\)\s*\n?)+)'
+    CITATION_PATTERN = r'- \[(\d+)\]\s*(.*?)\((.*?)\)'
+    INLINE_CITATION_PATTERN = r'(?<!\w)\[(\d+)\](?!\w)'
+    
+    @staticmethod
+    def extract_citations_section(content: str) -> tuple[str, int, str]:
+        """Extract citations section from content.
+        
+        Returns:
+            (main_content, section_start_index, citations_section)
+        """
+        lines = content.split('\n')
+        section_start = -1
+        
+        for i, line in enumerate(lines):
+            if 'Key Citations' in line or 'References' in line or '## Citations' in line:
+                section_start = i
+                break
+        
+        if section_start == -1:
+            return content, -1, ""
+        
+        return '\n'.join(lines[:section_start]), section_start, '\n'.join(lines[section_start:])
+    
+    @staticmethod
+    def parse_citations(citations_section: str) -> list[tuple[int, str, str]]:
+        """Parse citations from citations section.
+        
+        Returns:
+            List of (id, title, url) tuples
+        """
+        if not citations_section:
+            return []
+        
+        try:
+            pattern = CitationProcessor.CITATION_PATTERN
+            matches = re.findall(pattern, citations_section, re.DOTALL)
+            return [(int(cid), title.strip(), url.strip()) for cid, title, url in matches]
+        except Exception as e:
+            logger.error(f"Failed to parse citations: {e}")
+            return []
+            return []
+    
+    @staticmethod
+    def renumber_citations(content: str, citations: list[dict]) -> str:
+        """Renumber citations in content from old IDs to new sequential IDs.
+        
+        Args:
+            content: Content with citations
+            citations: List of citation dicts with 'id', 'title', 'url'
+        
+        Returns:
+            Content with renumbered citations
+        """
+        if not citations:
+            return content
+        
+        # Create mapping from old to new IDs
+        id_mapping = {old_cit['id']: idx + 1 for idx, old_cit in enumerate(citations)}
+        
+        # Replace citation numbers
+        updated_content = content
+        for old_id, new_id in sorted(id_mapping.items(), reverse=True):
+            try:
+                # Replace inline citations [old_id] with [new_id]
+                pattern = r'(?<!\w)\[' + re.escape(str(old_id)) + r'\](?!\w)'
+                updated_content = re.sub(pattern, f'[{new_id}]', updated_content)
+            except Exception as e:
+                logger.error(f"Failed to renumber citation {old_id}: {e}")
+        
+        return updated_content
+    
+    @staticmethod
+    def extract_citations_from_text(content: str) -> list[dict]:
+        """Extract citations from text with inline format.
+        
+        Returns:
+            List of citation dicts extracted from references section
+        """
+        main_content, section_start, citations_section = CitationProcessor.extract_citations_section(content)
+        
+        if section_start == -1:
+            return []
+        
+        parsed = CitationProcessor.parse_citations(citations_section)
+        return [
+            {'id': cid, 'title': title, 'url': url}
+            for cid, title, url in parsed
+        ]
 
 
 @tool
@@ -186,57 +288,33 @@ def background_investigation_node(state: State, config: RunnableConfig):
     query = state.get("clarified_research_topic") or state.get("research_topic")
     background_investigation_results = []
     
-    if SELECTED_SEARCH_ENGINE == SearchEngine.TAVILY.value:
-        searched_content = LoggedTavilySearch(
-            max_results=configurable.max_search_results
-        ).invoke(query)
-        # check if the searched_content is a tuple, then we need to unpack it
-        if isinstance(searched_content, tuple):
-            searched_content = searched_content[0]
-        
-        # Handle string JSON response (new format from fixed Tavily tool)
-        if isinstance(searched_content, str):
-            try:
-                parsed = json.loads(searched_content)
-                if isinstance(parsed, dict) and "error" in parsed:
-                    logger.error(f"Tavily search error: {parsed['error']}")
-                    background_investigation_results = []
-                elif isinstance(parsed, list):
-                    background_investigation_results = [
-                        f"## {elem.get('title', 'Untitled')}\n\n{elem.get('content', 'No content')}" 
-                        for elem in parsed
-                    ]
-                else:
-                    logger.error(f"Unexpected Tavily response format: {searched_content}")
-                    background_investigation_results = []
-            except json.JSONDecodeError:
-                logger.error(f"Failed to parse Tavily response as JSON: {searched_content}")
-                background_investigation_results = []
-        # Handle legacy list format
-        elif isinstance(searched_content, list):
-            background_investigation_results = [
-                f"## {elem['title']}\n\n{elem['content']}" for elem in searched_content
-            ]
-            return {
-                "background_investigation_results": "\n\n".join(
-                    background_investigation_results
-                )
-            }
-        else:
-            logger.error(
-                f"Tavily search returned malformed response: {searched_content}"
-            )
-            background_investigation_results = []
-    else:
-        background_investigation_results = get_web_search_tool(
-            configurable.max_search_results
-        ).invoke(query)
+    # Use ArXiv search tool (only search engine)
+    searched_content = get_web_search_tool(
+        configurable.max_search_results
+    ).invoke(query)
     
-    return {
-        "background_investigation_results": json.dumps(
-            background_investigation_results, ensure_ascii=False
+    # Handle response from ArXiv search
+    if isinstance(searched_content, str):
+        background_investigation_results = searched_content
+    elif isinstance(searched_content, list):
+        background_investigation_results = "\n\n".join(
+            [f"## {item.get('title', 'Untitled')}\n\n{item.get('content', 'No content')}" 
+             if isinstance(item, dict) else str(item) for item in searched_content]
         )
-    }
+    else:
+        background_investigation_results = str(searched_content)
+    
+    # Ensure consistent return format
+    if isinstance(background_investigation_results, str):
+        return {
+            "background_investigation_results": background_investigation_results
+        }
+    else:
+        return {
+            "background_investigation_results": json.dumps(
+                background_investigation_results, ensure_ascii=False
+            )
+        }
 
 
 def planner_node(
@@ -245,7 +323,7 @@ def planner_node(
     """Planner node that generate the full plan."""
     logger.info("Planner generating full plan with locale: %s", state.get("locale", "en-US"))
     configurable = Configuration.from_runnable_config(config)
-    plan_iterations = state["plan_iterations"] if state.get("plan_iterations", 0) else 0
+    plan_iterations = state.get("plan_iterations", 0) or 0
 
     # For clarification feature: use the clarified research topic (complete history)
     if state.get("enable_clarification", False) and state.get(
@@ -253,14 +331,15 @@ def planner_node(
     ):
         # Modify state to use clarified research topic instead of full conversation
         modified_state = state.copy()
+        clarified_topic = state.get("clarified_research_topic", "")
         modified_state["messages"] = [
-            {"role": "user", "content": state["clarified_research_topic"]}
+            {"role": "user", "content": clarified_topic}
         ]
-        modified_state["research_topic"] = state["clarified_research_topic"]
+        modified_state["research_topic"] = clarified_topic
         messages = apply_prompt_template("planner", modified_state, configurable, state.get("locale", "en-US"))
 
         logger.info(
-            f"Clarification mode: Using clarified research topic: {state['clarified_research_topic']}"
+            f"Clarification mode: Using clarified research topic: {clarified_topic}"
         )
     else:
         # Normal mode: use full conversation history
@@ -269,12 +348,13 @@ def planner_node(
     if state.get("enable_background_investigation") and state.get(
         "background_investigation_results"
     ):
+        background_results = state.get("background_investigation_results", "")
         messages += [
             {
                 "role": "user",
                 "content": (
                     "background investigation results of user query:\n"
-                    + state["background_investigation_results"]
+                    + background_results
                     + "\n"
                 ),
             }
@@ -390,7 +470,7 @@ def human_feedback_node(
             )
 
     # if the plan is accepted, run the following node
-    plan_iterations = state["plan_iterations"] if state.get("plan_iterations", 0) else 0
+    plan_iterations = state.get("plan_iterations", 0) or 0
     goto = "research_team"
     try:
         current_plan = repair_json_output(current_plan)
@@ -429,6 +509,76 @@ def human_feedback_node(
         update=update_dict,
         goto=goto,
     )
+
+
+def _process_clarification_mode(
+    state: State, config: RunnableConfig, response, max_clarification_rounds: int
+) -> tuple[str, str, str, int, list, str]:
+    """
+    Process clarification mode branch for coordinator node.
+    
+    Handles:
+    - Preparing clarification context
+    - Managing conversation history
+    - Determining when to continue vs. handoff
+    - Keeping indentation depth minimal
+    
+    Returns: 
+        (goto, locale, research_topic, clarification_rounds, clarification_history, clarified_topic)
+        where goto can be: "coordinator" (continue), "planner" (handoff), or "__end__" (error)
+    """
+    configurable = Configuration.from_runnable_config(config)
+    clarification_rounds = state.get("clarification_rounds", 0)
+    clarification_history = list(state.get("clarification_history", []) or [])
+    clarification_history = [item for item in clarification_history if item]
+    
+    state_messages = list(state.get("messages", []))
+    initial_topic = state.get("research_topic", "")
+    
+    # Rebuild clarification history from message thread
+    clarification_history = reconstruct_clarification_history(
+        state_messages, clarification_history, initial_topic
+    )
+    clarified_topic, clarification_history = build_clarified_topic_from_history(
+        clarification_history
+    )
+    
+    if clarification_history:
+        initial_topic = clarification_history[0]
+        latest_user_content = clarification_history[-1]
+    else:
+        latest_user_content = ""
+    
+    # Initialize return values
+    goto = "__end__"
+    locale = state.get("locale", "en-US")
+    research_topic = (
+        clarification_history[0]
+        if clarification_history
+        else state.get("research_topic", "")
+    )
+    if not clarified_topic:
+        clarified_topic = research_topic
+    
+    # Handle response without tool calls - LLM is asking a clarifying question
+    if not response.tool_calls and response.content:
+        # Check if max rounds reached
+        if clarification_rounds >= max_clarification_rounds:
+            logger.warning(
+                f"Max clarification rounds ({max_clarification_rounds}) reached. "
+                "LLM continued asking instead of calling handoff tool. Forcing handoff to planner."
+            )
+            goto = "planner"
+        else:
+            # LLM asked a clarifying question - need to continue clarification
+            clarification_rounds += 1
+            logger.info(
+                f"Clarification response: {clarification_rounds}/{max_clarification_rounds}: {response.content}"
+            )
+            # Signal to coordinator_node that we need to interrupt and wait for user response
+            goto = "coordinator"
+    
+    return goto, locale, research_topic, clarification_rounds, clarification_history, clarified_topic
 
 
 def coordinator_node(
@@ -489,19 +639,19 @@ def coordinator_node(
                 goto = "planner"
 
     # ============================================================
-    # BRANCH 2: Clarification ENABLED (New Feature)
+    # BRANCH 2: Clarification ENABLED (New Feature) - Delegated to helper
     # ============================================================
     else:
         # Load clarification state
         clarification_rounds = state.get("clarification_rounds", 0)
         clarification_history = list(state.get("clarification_history", []) or [])
-        clarification_history = [item for item in clarification_history if item]
         max_clarification_rounds = state.get("max_clarification_rounds", 3)
-
+        
         # Prepare the messages for the coordinator
         state_messages = list(state.get("messages", []))
         messages = apply_prompt_template("coordinator", state, locale=state.get("locale", "en-US"))
 
+        # Rebuild clarification history from message thread
         clarification_history = reconstruct_clarification_history(
             state_messages, clarification_history, initial_topic
         )
@@ -547,13 +697,13 @@ def coordinator_node(
         if clarification_rounds >= max_clarification_rounds:
             # Max rounds reached - force handoff by adding system instruction
             logger.warning(
-                f"Max clarification rounds ({max_clarification_rounds}) reached. Forcing handoff to planner. Using prepared clarified topic: {clarified_topic}"
+                f"Max clarification rounds ({max_clarification_rounds}) reached. Forcing handoff to planner."
             )
-            # Add system instruction to force handoff - let LLM choose the right tool
+            # Add system instruction to force handoff
             messages.append(
                 {
                     "role": "system",
-                    "content": f"MAX ROUNDS REACHED. You MUST call handoff_after_clarification (not handoff_to_planner) with the appropriate locale based on the user's language and research_topic='{clarified_topic}'. Do not ask any more questions.",
+                    "content": f"MAX ROUNDS REACHED. You MUST call handoff_after_clarification with the research_topic and locale. Do not ask any more questions.",
                 }
             )
 
@@ -567,64 +717,37 @@ def coordinator_node(
         # Initialize response processing variables
         goto = "__end__"
         locale = state.get("locale", "en-US")
-        research_topic = (
-            clarification_history[0]
-            if clarification_history
-            else state.get("research_topic", "")
+        research_topic = initial_topic or state.get("research_topic", "")
+        clarified_topic = clarified_topic or research_topic
+
+        # Use helper function to process clarification response and reduce nesting
+        goto, locale, research_topic, clarification_rounds, clarification_history, clarified_topic = (
+            _process_clarification_mode(state, config, response, max_clarification_rounds)
         )
-        if not clarified_topic:
-            clarified_topic = research_topic
+        
+        # Check if we should return early (clarification continues)
+        if goto == "coordinator" and response.content:
+            messages = list(state.get("messages", []) or [])
+            updated_messages = list(messages)
+            updated_messages.append(
+                HumanMessage(content=response.content, name="coordinator")
+            )
 
-        # --- Process LLM response ---
-        # No tool calls - LLM is asking a clarifying question
-        if not response.tool_calls and response.content:
-            # Check if we've reached max rounds - if so, force handoff to planner
-            if clarification_rounds >= max_clarification_rounds:
-                logger.warning(
-                    f"Max clarification rounds ({max_clarification_rounds}) reached. "
-                    "LLM didn't call handoff tool, forcing handoff to planner."
-                )
-                goto = "planner"
-                # Continue to final section instead of early return
-            else:
-                # Continue clarification process
-                clarification_rounds += 1
-                # Do NOT add LLM response to clarification_history - only user responses
-                logger.info(
-                    f"Clarification response: {clarification_rounds}/{max_clarification_rounds}: {response.content}"
-                )
-
-                # Append coordinator's question to messages
-                updated_messages = list(state_messages)
-                if response.content:
-                    updated_messages.append(
-                        HumanMessage(content=response.content, name="coordinator")
-                    )
-
-                return Command(
-                    update={
-                        "messages": updated_messages,
-                        "locale": locale,
-                        "research_topic": research_topic,
-                        "resources": configurable.resources,
-                        "clarification_rounds": clarification_rounds,
-                        "clarification_history": clarification_history,
-                        "clarified_research_topic": clarified_topic,
-                        "is_clarification_complete": False,
-                        "goto": goto,
-                        "__interrupt__": [("coordinator", response.content)],
-                    },
-                    goto=goto,
-                )
-        else:
-            # LLM called a tool (handoff) or has no content - clarification complete
-            if response.tool_calls:
-                logger.info(
-                    f"Clarification completed after {clarification_rounds} rounds. LLM called handoff tool."
-                )
-            else:
-                logger.warning("LLM response has no content and no tool calls.")
-            # goto will be set in the final section based on tool calls
+            return Command(
+                update={
+                    "messages": updated_messages,
+                    "locale": locale,
+                    "research_topic": research_topic,
+                    "resources": configurable.resources,
+                    "clarification_rounds": clarification_rounds,
+                    "clarification_history": clarification_history,
+                    "clarified_research_topic": clarified_topic,
+                    "is_clarification_complete": False,
+                    "goto": goto,
+                    "__interrupt__": [("coordinator", response.content)],
+                },
+                goto=goto,
+            )
 
     # ============================================================
     # Final: Build and return Command
@@ -706,10 +829,19 @@ def reporter_node(state: State, config: RunnableConfig):
     logger.info("Reporter write final report")
     configurable = Configuration.from_runnable_config(config)
     current_plan = state.get("current_plan")
+    
+    # Handle missing or invalid plan
+    if not current_plan:
+        logger.warning("No current plan found in state. Cannot generate report.")
+        return {"final_report": "Error: No plan provided for report generation.", "citations": []}
+    
+    plan_title = getattr(current_plan, 'title', 'Unknown Task')
+    plan_thought = getattr(current_plan, 'thought', 'No description available')
+    
     input_ = {
         "messages": [
             HumanMessage(
-                f"# Research Requirements\n\n## Task\n\n{current_plan.title}\n\n## Description\n\n{current_plan.thought}"
+                f"# Research Requirements\n\n## Task\n\n{plan_title}\n\n## Description\n\n{plan_thought}"
             )
         ],
         "locale": state.get("locale", "en-US"),
@@ -721,18 +853,19 @@ def reporter_node(state: State, config: RunnableConfig):
     citations = state.get("citations", [])
     
     # Ensure citations are numbered sequentially before passing to reporter
-    # Sort citations by their current ID to maintain order
-    citations.sort(key=lambda x: x['id'])
+    # Sort citations by their current ID to maintain order (with safe key access)
+    citations.sort(key=lambda x: x.get('id', 0) if isinstance(x, dict) else 0)
     
     # Renumber citations sequentially starting from 1
     renumbered_citations = []
     for idx, citation in enumerate(citations):
-        renumbered_citation = {
-            'id': idx + 1,
-            'title': citation['title'],
-            'url': citation['url']
-        }
-        renumbered_citations.append(renumbered_citation)
+        if isinstance(citation, dict):
+            renumbered_citation = {
+                'id': idx + 1,
+                'title': citation.get('title', ''),
+                'url': citation.get('url', '')
+            }
+            renumbered_citations.append(renumbered_citation)
     
     # Update the citations in state with renumbered ones
     citations = renumbered_citations
@@ -740,7 +873,11 @@ def reporter_node(state: State, config: RunnableConfig):
     # Format citations for the message
     formatted_citations = []
     for citation in citations:
-        formatted_citations.append(f"- [{citation['id']}] {citation['title']} ({citation['url']})")
+        if isinstance(citation, dict):
+            cid = citation.get('id', '?')
+            title = citation.get('title', '')
+            url = citation.get('url', '')
+            formatted_citations.append(f"- [{cid}] {title} ({url})")
     
     citations_text = "\n".join(formatted_citations)
     if citations_text:
@@ -776,48 +913,35 @@ def reporter_node(state: State, config: RunnableConfig):
     logger.info(f"reporter response: {response_content}")
 
     # Process the response to ensure citation numbers in the text match the final citation list
-    import re
-    
-    # Extract the citations section from the response (everything after "Key Citations" or "References")
+    # Use CitationProcessor utility class for safe regex handling
     updated_response_content = response_content
-    citations_section_pattern = r'(## Key Citations\s*\n(?:- \[\d+\].*?\(.*?\)\s*\n?)+)'
-    citations_section_matches = re.search(citations_section_pattern, response_content, re.IGNORECASE)
     
-    if citations_section_matches:
-        citations_section = citations_section_matches.group(1)
-        # Find all citations in the format "[number] Title (URL)"
-        citation_pattern = r'- \[(\d+)\]\s*(.*?)\((.*?)\)'
-        found_citations = re.findall(citation_pattern, citations_section)
+    try:
+        # Extract citations section using utility class - returns (main_content, section_start, citations_section)
+        main_content, section_start, citations_section = CitationProcessor.extract_citations_section(response_content)
         
-        # Create a mapping between old citation numbers and new sequential numbers
-        citation_mapping = {}
-        for idx, (old_num, title, url) in enumerate(found_citations):
-            new_num = str(idx + 1)
-            citation_mapping[old_num] = new_num
-        
-        # Replace citation numbers in the entire response content
-        for old_num, new_num in citation_mapping.items():
-            # Replace in-text citations [old_num] with [new_num]
-            updated_response_content = re.sub(
-                r'\[' + re.escape(old_num) + r'\]', 
-                f'[{new_num}]', 
-                updated_response_content
-            )
-        
-        # Update the citations section with sequential numbering
-        for idx, (old_num, title, url) in enumerate(found_citations):
-            old_citation = f'- [{old_num}] {title}({url})'
-            new_citation = f'- [{idx + 1}] {title}({url})'
-            # Handle variations in spacing
-            updated_response_content = re.sub(
-                r'- \[' + re.escape(old_num) + r'\]\s*' + re.escape(title) + r'\(' + re.escape(url) + r'\)',
-                new_citation,
-                updated_response_content
-            )
+        if section_start >= 0 and citations_section:  # Check if citations section was found
+            # Parse citations from the extracted section - returns list of (id, title, url) tuples
+            found_citations_tuples = CitationProcessor.parse_citations(citations_section)
+            
+            if found_citations_tuples:
+                # Convert tuples to dicts for renumber_citations function
+                found_citations_dicts = [
+                    {'id': int(cid), 'title': title, 'url': url}
+                    for cid, title, url in found_citations_tuples
+                ]
+                # Renumber citations and update response content
+                updated_response_content = CitationProcessor.renumber_citations(
+                    response_content, 
+                    found_citations_dicts
+                )
+                logger.debug(f"Successfully processed {len(found_citations_dicts)} citations")
+    except Exception as e:
+        logger.warning(f"Error processing citations in reporter_node: {e}. Using original response.")
+        updated_response_content = response_content
     
     # Update the state with the final report and renumbered citations
     return {"final_report": updated_response_content, "citations": citations}
-
 
 
 def research_team_node(state: State):
@@ -834,6 +958,13 @@ async def _execute_agent_step(
     logger.debug(f"[_execute_agent_step] Starting execution for agent: {agent_name}")
     
     current_plan = state.get("current_plan")
+    if not current_plan:
+        logger.error(f"[_execute_agent_step] No current plan found for agent: {agent_name}")
+        return Command(
+            update=preserve_state_meta_fields(state),
+            goto="research_team"
+        )
+    
     plan_title = current_plan.title
     observations = state.get("observations", [])
     logger.debug(f"[_execute_agent_step] Plan title: {plan_title}, observations count: {len(observations)}")
@@ -989,36 +1120,41 @@ async def _execute_agent_step(
     
     logger.debug(f"{agent_name.capitalize()} full response: {response_content}")
 
-    # Parse citations from the response content if this is a researcher agent
-    import re
+    # Parse citations from the response content using CitationProcessor utility class
     current_citations = state.get("citations", [])
     next_citation_id = state.get("next_citation_id", 1)
-    
-    # Look for references section in the response (this is where new citations are defined)
-    references_pattern = r'-\s*\[(\d+)\]\s*([^\(\n]+)\(([^\)\n]+)\)'
-    references_matches = re.findall(references_pattern, response_content)
-    
-    # Update citations based on found references
     new_citations_added = []
-    for ref_id, title, url in references_matches:
-        ref_id = int(ref_id)
-        # Check if this citation already exists
-        exists = False
-        for citation in current_citations:
-            if citation['id'] == ref_id:
-                exists = True
-                break
-        if not exists:
-            new_citation = {
-                'id': ref_id,
-                'title': title.strip(),
-                'url': url.strip()
-            }
-            current_citations.append(new_citation)
-            new_citations_added.append(new_citation)
-            # Update next_citation_id if needed
-            if ref_id >= next_citation_id:
-                next_citation_id = ref_id + 1
+    
+    try:
+        # Extract all citations from the response using CitationProcessor
+        # Returns list of dicts with 'id', 'title', 'url' keys
+        response_citations = CitationProcessor.extract_citations_from_text(response_content)
+        
+        # Update citations based on found references
+        for citation_dict in response_citations:
+            ref_id = int(citation_dict.get('id', 0))
+            title = citation_dict.get('title', '')
+            url = citation_dict.get('url', '')
+            
+            # Check if this citation already exists
+            exists = False
+            for citation in current_citations:
+                if citation['id'] == ref_id:
+                    exists = True
+                    break
+            if not exists and ref_id > 0:
+                new_citation = {
+                    'id': ref_id,
+                    'title': title.strip() if title else '',
+                    'url': url.strip() if url else ''
+                }
+                current_citations.append(new_citation)
+                new_citations_added.append(new_citation)
+                # Update next_citation_id if needed
+                if ref_id >= next_citation_id:
+                    next_citation_id = ref_id + 1
+    except Exception as e:
+        logger.warning(f"Error extracting citations from {agent_name} response: {e}")
 
     # Renumber all citations to ensure they are sequential and update the response content accordingly
     # Sort all citations by their original ID
@@ -1035,58 +1171,20 @@ async def _execute_agent_step(
     # Update next_citation_id to be one more than the highest citation ID
     next_citation_id = len(current_citations) + 1
     
-    # Split content into main body and citations section to handle them separately
-    # Find the citations section (everything after "Key Citations" or "References")
-    citations_section_start = -1
-    lines = response_content.split('\n')
-    main_content_lines = []
-    citations_lines = []
-    
-    for i, line in enumerate(lines):
-        if 'Key Citations' in line or 'References' in line or '## Citations' in line:
-            citations_section_start = i
-            main_content_lines = lines[:i]
-            citations_lines = lines[i:]
-            break
-    
-    if citations_section_start == -1:
-        # No citations section found, treat entire content as main content
-        main_content = response_content
-        citations_section = ""
-    else:
-        main_content = '\n'.join(main_content_lines)
-        citations_section = '\n'.join(citations_lines)
-    
-    # Update citation numbers in the main content (text citations)
-    updated_main_content = main_content
-    for old_id, new_id in sorted(id_mapping.items(), key=lambda x: x[0], reverse=True):  # Reverse order to avoid conflicts when replacing
-        # Replace in-text citations [old_id] with [new_id]
-        # Use word boundaries to avoid replacing partial matches in URLs or other text
-        updated_main_content = re.sub(
-            r'(?<!\w)\[' + re.escape(str(old_id)) + r'\](?!\w)',
-            f'[{new_id}]',
-            updated_main_content
+    # Use CitationProcessor to renumber citations in the response content
+    try:
+        # Build proper dict format for renumber_citations function
+        citations_for_renumber = [
+            {'id': old_id, 'title': '', 'url': ''}
+            for old_id in id_mapping.keys()
+        ]
+        response_content = CitationProcessor.renumber_citations(
+            response_content,
+            citations_for_renumber
         )
-    
-    # Update citation numbers in the citations section
-    updated_citations_section = citations_section
-    for old_id, new_id in id_mapping.items():
-        # Replace citation entries in the format "- [old_id] Title (URL)" with "- [new_id] Title (URL)"
-        pattern = r'(-\s*\[' + re.escape(str(old_id)) + r'\]\s*[^\n]*?\([^\n]*?\)\n?)'
-        matches = re.findall(pattern, updated_citations_section)
-        for match in matches:
-            # Extract the title and URL part from the match
-            parts = match.split(f'[{old_id}]', 1)
-            if len(parts) > 1:
-                title_and_url = parts[1]  # This includes the space, title, and (URL)
-                new_citation = f'- [{new_id}]{title_and_url}'
-                # Replace only this specific occurrence
-                updated_citations_section = updated_citations_section.replace(match, new_citation, 1)
-    
-    # Combine the updated main content and citations section
-    response_content = updated_main_content
-    if citations_section_start != -1:
-        response_content += '\n' + updated_citations_section
+        logger.debug(f"Successfully renumbered {len(id_mapping)} citations")
+    except Exception as e:
+        logger.warning(f"Error renumbering citations: {e}. Using original response.")
 
     # Update the step with the execution result
     current_step.execution_res = response_content
@@ -1132,49 +1230,67 @@ async def _setup_and_execute_agent_step(
         Command to update state and go to research_team
     """
     configurable = Configuration.from_runnable_config(config)
-    mcp_servers = {}
-    enabled_tools = {}
+    
+    # Try to load MCP tools, but continue without them if not available
+    try:
+        from langchain_mcp_adapters.client import MultiServerMCPClient
+        mcp_servers = {}
+        enabled_tools = {}
 
-    # Extract MCP server configuration for this agent type
-    if configurable.mcp_settings:
-        for server_name, server_config in configurable.mcp_settings["servers"].items():
-            if (
-                server_config["enabled_tools"]
-                and agent_type in server_config["add_to_agents"]
-            ):
-                mcp_servers[server_name] = {
-                    k: v
-                    for k, v in server_config.items()
-                    if k in ("transport", "command", "args", "url", "env", "headers")
-                }
-                for tool_name in server_config["enabled_tools"]:
-                    enabled_tools[tool_name] = server_name
+        # Extract MCP server configuration for this agent type
+        if configurable.mcp_settings:
+            for server_name, server_config in configurable.mcp_settings["servers"].items():
+                if (
+                    server_config["enabled_tools"]
+                    and agent_type in server_config["add_to_agents"]
+                ):
+                    mcp_servers[server_name] = {
+                        k: v
+                        for k, v in server_config.items()
+                        if k in ("transport", "command", "args", "url", "env", "headers")
+                    }
+                    for tool_name in server_config["enabled_tools"]:
+                        enabled_tools[tool_name] = server_name
 
-    # Create and execute agent with MCP tools if available
-    if mcp_servers:
-        client = MultiServerMCPClient(mcp_servers)
-        loaded_tools = default_tools[:]
-        all_tools = await client.get_tools()
-        for tool in all_tools:
-            if tool.name in enabled_tools:
-                tool.description = (
-                    f"Powered by '{enabled_tools[tool.name]}'.\n{tool.description}"
-                )
-                loaded_tools.append(tool)
+        # Create and execute agent with MCP tools if available
+        if mcp_servers:
+            client = MultiServerMCPClient(mcp_servers)
+            loaded_tools = default_tools[:]
+            all_tools = await client.get_tools()
+            for tool in all_tools:
+                if tool.name in enabled_tools:
+                    tool.description = (
+                        f"Powered by '{enabled_tools[tool.name]}'.\n{tool.description}"
+                    )
+                    loaded_tools.append(tool)
 
-        llm_token_limit = get_llm_token_limit_by_type(AGENT_LLM_MAP[agent_type])
-        pre_model_hook = partial(ContextManager(llm_token_limit, 3).compress_messages)
-        agent = create_agent(
-            agent_type,
-            agent_type,
-            loaded_tools,
-            agent_type,
-            pre_model_hook,
-            interrupt_before_tools=configurable.interrupt_before_tools,
-        )
-        return await _execute_agent_step(state, agent, agent_type)
-    else:
-        # Use default tools if no MCP servers are configured
+            llm_token_limit = get_llm_token_limit_by_type(AGENT_LLM_MAP[agent_type])
+            pre_model_hook = partial(ContextManager(llm_token_limit, 3).compress_messages)
+            agent = create_agent(
+                agent_type,
+                agent_type,
+                loaded_tools,
+                agent_type,
+                pre_model_hook,
+                interrupt_before_tools=configurable.interrupt_before_tools,
+            )
+            return await _execute_agent_step(state, agent, agent_type)
+        else:
+            # Use default tools if no MCP servers are configured
+            llm_token_limit = get_llm_token_limit_by_type(AGENT_LLM_MAP[agent_type])
+            pre_model_hook = partial(ContextManager(llm_token_limit, 3).compress_messages)
+            agent = create_agent(
+                agent_type,
+                agent_type,
+                default_tools,
+                agent_type,
+                pre_model_hook,
+                interrupt_before_tools=configurable.interrupt_before_tools,
+            )
+            return await _execute_agent_step(state, agent, agent_type)
+    except ImportError:
+        logger.warning("langchain_mcp_adapters not installed, skipping MCP tool loading")
+        # Fallback to default tools without MCP
         llm_token_limit = get_llm_token_limit_by_type(AGENT_LLM_MAP[agent_type])
         pre_model_hook = partial(ContextManager(llm_token_limit, 3).compress_messages)
         agent = create_agent(
@@ -1191,29 +1307,59 @@ async def _setup_and_execute_agent_step(
 async def researcher_node(
     state: State, config: RunnableConfig
 ) -> Command[Literal["research_team"]]:
-    """Researcher node that do research"""
+    """Researcher node that do research with support for traditional and deep-mining analysis modes"""
     logger.info("Researcher node is researching.")
     logger.debug(f"[researcher_node] Starting researcher agent")
     
     configurable = Configuration.from_runnable_config(config)
     logger.debug(f"[researcher_node] Max search results: {configurable.max_search_results}")
     
-    tools = [get_web_search_tool(configurable.max_search_results), crawl_tool]
+    # Get the current step to determine analysis type
+    current_plan = state.get("current_plan")
+    current_step = None
+    analysis_type = None
+    
+    if current_plan and hasattr(current_plan, 'steps'):
+        for step in current_plan.steps:
+            if not step.execution_res:
+                current_step = step
+                if hasattr(step, 'analysis_type') and step.analysis_type:
+                    analysis_type = step.analysis_type
+                break
+    
+    logger.debug(f"[researcher_node] Current analysis_type: {analysis_type}")
+    
+    # Build tools based on analysis type
+    tools = []
+    
+    # Always include standard research tools
+    tools.append(get_web_search_tool(configurable.max_search_results))
+    tools.append(crawl_tool)
+    
+    # Add specialized academic analysis tools if needed
+    if analysis_type:
+        logger.info(f"[researcher_node] Adding specialized tools for analysis_type: {analysis_type}")
+        
+        if analysis_type == "paper_analysis":
+            logger.debug("[researcher_node] Adding paper metadata extraction tool")
+            tools.append(paper_metadata_extraction)
+        elif analysis_type == "citation_network":
+            logger.debug("[researcher_node] Adding citation analysis tool")
+            tools.append(citation_analysis)
+        elif analysis_type == "technical_breakdown":
+            logger.debug("[researcher_node] Adding technical breakdown tool")
+            tools.append(technical_breakdown)
+            tools.append(innovation_graph)
+    
+    # Add general-purpose tools
+    tools.append(innovation_graph)
+    tools.append(paper_anonymize)
+    
+    # Add retriever tool if resources are available
     retriever_tool = get_retriever_tool(state.get("resources", []))
     if retriever_tool:
         logger.debug(f"[researcher_node] Adding retriever tool to tools list")
         tools.insert(0, retriever_tool)
-    
-    # Add query optimization tool if enabled in configuration
-    try:
-        from src.config import load_yaml_config
-        config_data = load_yaml_config("conf.yaml")
-        search_config = config_data.get("search", {})
-        if search_config.get("auto_optimize_verbose_queries", True):
-            tools.append(optimize_search_queries)
-            logger.info("[researcher_node] Query optimization tool enabled")
-    except Exception as e:
-        logger.debug(f"[researcher_node] Could not load search config for optimization tool: {e}")
     
     logger.info(f"[researcher_node] Researcher tools count: {len(tools)}")
     logger.debug(f"[researcher_node] Researcher tools: {[tool.name if hasattr(tool, 'name') else str(tool) for tool in tools]}")

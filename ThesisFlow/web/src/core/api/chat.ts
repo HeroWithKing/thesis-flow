@@ -89,7 +89,12 @@ export async function* chatStream(
       } as ChatEvent;
     }
   }catch(e){
-    console.error(e);
+    console.error("Chat stream error:", e);
+    if (e instanceof Error) {
+      console.error("Error message:", e.message);
+      console.error("Error stack:", e.stack);
+    }
+    throw e;
   }
 }
 

@@ -6,6 +6,8 @@ import logging
 import re
 from typing import List, Optional
 from langchain_core.tools import tool
+from .query_validator import QueryValidator
+from .chinese_query_handler import handle_user_query, ChineseQueryHandler
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,12 @@ class QueryOptimizer:
             "technical_keywords": r"\b(?:algorithm|architecture|framework|model|method|approach|technique|" +
                                  r"implementation|design|protocol|standard|optimization)\b"
         }
+        # Stop words for query filtering
+        self.stop_words = {
+            'search', 'collect', 'gather', 'information', 'find', 'about', 'the', 'and',
+            'or', 'not', 'with', 'for', 'of', 'to', 'in', 'is', 'be', 'a', 'an', 'at',
+            'by', 'from', 'on', 'it', 'this', 'that', 'as', 'are', 'was', 'were'
+        }
 
     def optimize_description(self, description: str) -> List[str]:
         """
@@ -38,14 +46,29 @@ class QueryOptimizer:
         Returns:
             List of optimized search queries
         """
-        if not description or len(description.strip()) < 5:
+        if not description or len(description.strip()) < 2:
+            return []
+
+        # Check if description is primarily non-English (Chinese, Japanese, etc.)
+        # by counting non-ASCII characters
+        non_ascii_count = sum(1 for c in description if ord(c) > 127)
+        total_chars = len(description.strip())
+        is_non_english = (non_ascii_count / total_chars) > 0.5 if total_chars > 0 else False
+        
+        # For non-English (especially Chinese), treat the whole phrase as a single query
+        if is_non_english:
+            logger.info(f"Detected non-English input (Chinese/similar). Input: {description[:50]}")
+            # Simply return the description as-is, without decomposition
+            cleaned = description.strip()
+            if len(cleaned) > 2:
+                return [cleaned]
             return []
 
         # Check if description already contains structured queries
         if self._is_already_structured(description):
             return self._extract_existing_queries(description)
 
-        # Otherwise, generate optimized queries
+        # For English: generate optimized queries
         return self._generate_queries_from_description(description)
 
     def _is_already_structured(self, description: str) -> bool:
@@ -131,18 +154,29 @@ class QueryOptimizer:
             if q4:
                 queries.append(q4)
 
-        # If no queries generated, create a fallback generic query
+        # If no queries generated, create a simple fallback using primary terms only
         if not queries:
-            # Extract any substantial noun phrases
+            # Extract any substantial noun phrases (4+ characters)
             words = description.split()
-            important_words = [w.lower() for w in words
-                             if len(w) > 4 and not w.lower() in ['search', 'collect', 'gather', 'information']]
+            
+            # Filter for meaningful words (not stop words, not too short)
+            important_words = [
+                w.lower() for w in words 
+                if len(w) > 3 and w.lower() not in self.stop_words and not w.startswith('_')
+            ]
+            
             if important_words:
-                q_fallback = " AND ".join(important_words[:3])
-                queries.append(q_fallback)
+                # Use the first 2-3 important words with simple space (not AND)
+                q_fallback = " ".join(important_words[:3])
+                if q_fallback.strip():
+                    queries.append(q_fallback)
 
         # Limit to 5 queries maximum and remove duplicates
         queries = list(dict.fromkeys(queries))  # Remove duplicates while preserving order
+        
+        # Final validation: ensure all queries are clean
+        queries = [q.strip() for q in queries if q and q.strip()]
+        
         return queries[:5]
 
     def _extract_terms(self, text: str, term_type: str, limit: int = 5) -> List[str]:
@@ -173,25 +207,39 @@ class QueryOptimizer:
         if not required_terms:
             return ""
 
-        # Build required part
+        # Build required part - filter out empty strings
+        clean_required_terms = [t.strip() for t in required_terms if t and t.strip()]
+        if not clean_required_terms:
+            return ""
+            
         required_part = " AND ".join(f'"{term}"' if " " in term else term
-                                    for term in required_terms)
+                                    for term in clean_required_terms)
 
         # Build optional part
         optional_part = ""
         if optional_terms:
-            optional_str = " OR ".join(f'"{term}"' if " " in term else term
-                                      for term in optional_terms)
-            optional_part = f" AND ({optional_str})"
+            # Filter out empty strings from optional terms
+            clean_optional_terms = [t.strip() for t in optional_terms if t and t.strip()]
+            if clean_optional_terms:
+                optional_str = " OR ".join(f'"{term}"' if " " in term else term
+                                          for term in clean_optional_terms)
+                optional_part = f" OR ({optional_str})"
 
         # Build exclusion part
         exclude_part = ""
         if exclude_terms:
-            exclude_str = " AND NOT ".join(exclude_terms)
-            exclude_part = f" AND NOT {exclude_str}"
+            # Filter out empty strings from exclude terms
+            clean_exclude_terms = [t.strip() for t in exclude_terms if t and t.strip()]
+            if clean_exclude_terms:
+                exclude_str = " NOT ".join(clean_exclude_terms)
+                exclude_part = f" NOT ({exclude_str})"
 
-        # Combine parts
-        query = required_part + optional_part + exclude_part
+        # Combine parts - use proper Boolean operators
+        parts = [p for p in [required_part, optional_part, exclude_part] if p]
+        if not parts:
+            return ""
+            
+        query = " ".join(parts)
 
         # Add time filter if provided
         if time_filter:
@@ -201,6 +249,11 @@ class QueryOptimizer:
                 if year_match:
                     query += f" {year_match.group(0)}"
 
+        # Final cleanup: remove any trailing commas, AND, OR, NOT operators
+        query = re.sub(r'\s*[,;]\s*$', '', query)  # Remove trailing commas/semicolons
+        query = re.sub(r'\s+(AND|OR|NOT)\s*$', '', query)  # Remove trailing Boolean operators
+        query = re.sub(r'\s+', ' ', query)  # Normalize whitespace
+        
         return query.strip()
 
 
@@ -212,34 +265,55 @@ _optimizer = QueryOptimizer()
 def optimize_search_queries(description: str) -> str:
     """
     Convert verbose search descriptions into multiple specific search queries.
+    
+    Handles both English and non-English (especially Chinese) queries correctly.
+    For Chinese queries, preserves them as complete phrases rather than decomposing.
 
     This tool analyzes a lengthy description of what to search for and converts it into
     2-5 concise, Boolean-formatted queries suitable for academic search engines like arXiv.
 
     Args:
-        description: The verbose description of what to search for (can be a full sentence or paragraph)
+        description: The verbose description of what to search for (can be English or Chinese)
 
     Returns:
         JSON string containing:
         - queries: List of optimized search queries
         - explanation: Brief explanation of the query strategy
 
-    Example:
-        Input: "Search academic databases (arXiv, IEEE Xplore, ACM Digital Library) for information 
-                related to AI glasses. Gather historical data such as timeline of development, early 
-                pioneers, and foundational work."
-
+    Example (English):
+        Input: "Search academic databases for information related to AI glasses"
         Output: {
-            "queries": [
-                "\"AI glasses\" OR \"augmented reality glasses\" AND computer vision",
-                "smart glasses OR head-mounted display AND applications",
-                "wearable display AND optical design OR micro-display technology"
-            ],
-            "explanation": "Query 1 focuses on core concept with technical approach. Query 2 explores applications. Query 3 dives into technical components."
+            "queries": ["AI glasses", "augmented reality glasses"],
+            "explanation": "Query 1 focuses on core concept. Query 2 explores related terms."
+        }
+        
+    Example (Chinese):
+        Input: "液体神经网络的历史发展和应用"
+        Output: {
+            "queries": ["液体神经网络的历史发展和应用"],
+            "explanation": "Chinese query preserved as complete phrase"
         }
     """
     try:
-        optimized_queries = _optimizer.optimize_description(description)
+        if not description or len(description.strip()) < 2:
+            return json.dumps({
+                "queries": [],
+                "explanation": "Description is too short",
+                "error": "Minimum 2 characters required"
+            })
+        
+        description = description.strip()
+        
+        # Check if this is a non-English (especially Chinese) query
+        is_non_english, language = ChineseQueryHandler.is_non_english(description)
+        
+        if is_non_english and language == "chinese":
+            logger.info(f"Processing Chinese query: {description}")
+            # For Chinese, handle specially to preserve meaning
+            optimized_queries = handle_user_query(description)
+        else:
+            # For English queries, use the standard optimization
+            optimized_queries = _optimizer.optimize_description(description)
 
         if not optimized_queries:
             return json.dumps({
@@ -248,24 +322,52 @@ def optimize_search_queries(description: str) -> str:
                 "error": "No valid queries could be generated"
             })
 
+        # Validate and clean each query
+        validated_queries = []
+        validation_issues = []
+        
+        for query in optimized_queries:
+            is_valid, cleaned_query, error_msg = QueryValidator.validate_query(query)
+            
+            if is_valid:
+                validated_queries.append(cleaned_query)
+                if error_msg:
+                    validation_issues.append(f"Query cleaned: {error_msg}")
+            else:
+                validation_issues.append(f"Query invalid: {error_msg}")
+                logger.warning(f"Query validation failed: {error_msg}. Original: {query}")
+        
+        # If no valid queries after validation, try the original ones
+        if not validated_queries:
+            validated_queries = optimized_queries
+            logger.warning("No queries passed validation, using original queries")
+        
         # Create explanation
         explanations = []
-        if len(optimized_queries) > 0:
-            explanations.append("Query 1: Core concept with primary technical focus")
-        if len(optimized_queries) > 1:
+        if len(validated_queries) > 0:
+            if is_non_english and language == "chinese":
+                explanations.append("Chinese phrase preserved as single query for semantic integrity")
+            else:
+                explanations.append("Query 1: Core concept with primary technical focus")
+        if len(validated_queries) > 1:
             explanations.append("Query 2: Application-domain specific search")
-        if len(optimized_queries) > 2:
+        if len(validated_queries) > 2:
             explanations.append("Query 3: Technical depth and methodology focus")
-        if len(optimized_queries) > 3:
+        if len(validated_queries) > 3:
             explanations.append("Query 4: Extended coverage of related domains")
-        if len(optimized_queries) > 4:
+        if len(validated_queries) > 4:
             explanations.append("Query 5: Additional refinement or alternative perspectives")
 
-        return json.dumps({
-            "queries": optimized_queries,
+        result = {
+            "queries": validated_queries,
             "explanation": " | ".join(explanations),
-            "count": len(optimized_queries)
-        }, ensure_ascii=False)
+            "count": len(validated_queries)
+        }
+        
+        if validation_issues:
+            result["validation_notes"] = validation_issues
+        
+        return json.dumps(result, ensure_ascii=False)
 
     except Exception as e:
         logger.error(f"Error optimizing search queries: {str(e)}")

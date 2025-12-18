@@ -145,6 +145,14 @@ export async function sendMessage(
       const { type, data } = event;
       let message: Message | undefined;
       
+      // Handle error events
+      if (type === "error") {
+        console.error("Backend error event received:", data);
+        const errorMsg = data.error_detail || data.error || "Unknown error";
+        toast(`Error: ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+      
       // Handle tool_call_result specially: use the message that contains the tool call
       if (type === "tool_call_result") {
         message = findMessageByToolCallId(data.tool_call_id);
@@ -187,7 +195,12 @@ export async function sendMessage(
         scheduleUpdate();
       }
     }
-  } catch {
+  } catch (error) {
+    console.error("Stream processing error:", error);
+    if (error instanceof Error) {
+      console.error("Error message:", error.message);
+      console.error("Error stack:", error.stack);
+    }
     toast("An error occurred while generating the response. Please try again.");
     // Update message status.
     // TODO: const isAborted = (error as Error).name === "AbortError";

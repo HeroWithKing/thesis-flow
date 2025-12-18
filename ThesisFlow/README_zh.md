@@ -146,32 +146,16 @@ bootstrap.bat -d
 
 ### 公域搜索引擎
 
-DeerFlow 支持多种搜索引擎，可以在`.env`文件中通过`SEARCH_API`变量进行配置：
-
-- **Tavily**（默认）：专为 AI 应用设计的专业搜索 API
-  - 需要在`.env`文件中设置`TAVILY_API_KEY`
-  - 注册地址：<https://app.tavily.com/home>
-
-- **DuckDuckGo**：注重隐私的搜索引擎
-  - 无需 API 密钥
-
-- **Brave Search**：具有高级功能的注重隐私的搜索引擎
-  - 需要在`.env`文件中设置`BRAVE_SEARCH_API_KEY`
-  - 注册地址：<https://brave.com/search/api/>
+DeerFlow 现在使用 **Arxiv** 作为主要搜索引擎用于学术研究：
 
 - **Arxiv**：用于学术研究的科学论文搜索
   - 无需 API 密钥
   - 专为科学和学术论文设计
 
-- **Searx/SearxNG**：自托管的元搜索引擎
-  - 需要在`.env`文件中设置`SEARX_HOST`
-  - 支持对接Searx或SearxNG
-
-要配置您首选的搜索引擎，请在`.env`文件中设置`SEARCH_API`变量：
+要配置搜索引擎，请在`.env`文件中设置`SEARCH_API`变量：
 
 ```bash
-# 选择一个：tavily, duckduckgo, brave_search, arxiv
-SEARCH_API=tavily
+SEARCH_API=arxiv
 ```
 
 ### 私域知识库引擎

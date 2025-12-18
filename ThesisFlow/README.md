@@ -153,32 +153,16 @@ Explore more details in the [`web`](./web/) directory.
 
 ### Web Search
 
-DeerFlow supports multiple search engines that can be configured in your `.env` file using the `SEARCH_API` variable:
-
-- **Tavily** (default): A specialized search API for AI applications
-  - Requires `TAVILY_API_KEY` in your `.env` file
-  - Sign up at: https://app.tavily.com/home
-
-- **DuckDuckGo**: Privacy-focused search engine
-  - No API key required
-
-- **Brave Search**: Privacy-focused search engine with advanced features
-  - Requires `BRAVE_SEARCH_API_KEY` in your `.env` file
-  - Sign up at: https://brave.com/search/api/
+DeerFlow now uses **Arxiv** as the primary search engine for academic research:
 
 - **Arxiv**: Scientific paper search for academic research
   - No API key required
   - Specialized for scientific and academic papers
 
-- **Searx/SearxNG**: Self-hosted metasearch engine
-  - Requires `SEARX_HOST` to be set in the `.env` file
-  - Supports connecting to either Searx or SearxNG
-
-To configure your preferred search engine, set the `SEARCH_API` variable in your `.env` file:
+To configure the search engine, set the `SEARCH_API` variable in your `.env` file:
 
 ```bash
-# Choose one: tavily, duckduckgo, brave_search, arxiv
-SEARCH_API=tavily
+SEARCH_API=arxiv
 ```
 
 ### Private Knowledgebase

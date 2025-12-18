@@ -23,6 +23,7 @@ from src.config.configuration import get_recursion_limit
 from src.config.loader import get_bool_env, get_str_env
 from src.config.report_style import ReportStyle
 from src.config.tools import SELECTED_RAG_PROVIDER
+
 from src.graph.builder import build_graph_with_memory
 from src.graph.checkpoint import chat_stream_message
 from src.graph.utils import (
@@ -487,12 +488,16 @@ async def _stream_graph_events(
         
         logger.debug(f"[{safe_thread_id}] Graph event stream completed. Total events: {event_count}")
     except Exception as e:
-        logger.exception(f"[{safe_thread_id}] Error during graph execution")
+        logger.exception(f"[{safe_thread_id}] Error during graph execution: {str(e)}")
+        import traceback
+        tb_str = traceback.format_exc()
+        logger.error(f"[{safe_thread_id}] Full error traceback:\n{tb_str}")
         yield _make_event(
             "error",
             {
                 "thread_id": thread_id,
                 "error": "Error during graph execution",
+                "error_detail": str(e),
             },
         )
 
