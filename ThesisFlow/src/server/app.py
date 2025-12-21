@@ -447,13 +447,25 @@ async def _stream_graph_events(
     logger.debug(f"[{safe_thread_id}] Starting graph event stream with agent nodes")
     try:
         event_count = 0
-        async for agent, _, event_data in graph_instance.astream(
+        async for values in graph_instance.astream(
             workflow_input,
             config=workflow_config,
             stream_mode=["messages", "updates"],
             subgraphs=True,
         ):
             event_count += 1
+            
+            # Handle both 2-value and 3-value returns from astream
+            # With subgraphs=True: returns (agent, event_from_subgraph, event_data)
+            # Without subgraphs: returns (agent, event_data)
+            if len(values) == 3:
+                agent, _, event_data = values
+            elif len(values) == 2:
+                agent, event_data = values
+            else:
+                logger.warning(f"[{safe_thread_id}] Unexpected astream return format: {len(values)} values")
+                continue
+            
             safe_agent = sanitize_agent_name(agent)
             logger.debug(f"[{safe_thread_id}] Graph event #{event_count} received from agent: {safe_agent}")
             

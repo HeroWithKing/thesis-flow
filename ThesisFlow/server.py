@@ -9,7 +9,6 @@ import argparse
 import asyncio
 import logging
 import os
-import signal
 import sys
 
 import uvicorn
@@ -32,17 +31,6 @@ logger = logging.getLogger(__name__)
 if os.name == "nt":
     logger.info("Setting Windows event loop policy for asyncio")
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
-
-def handle_shutdown(signum, frame):
-    """Handle graceful shutdown on SIGTERM/SIGINT"""
-    logger.info("Received shutdown signal. Starting graceful shutdown...")
-    sys.exit(0)
-
-
-# Register signal handlers
-signal.signal(signal.SIGTERM, handle_shutdown)
-signal.signal(signal.SIGINT, handle_shutdown)
 
 if __name__ == "__main__":
     # Parse command line arguments

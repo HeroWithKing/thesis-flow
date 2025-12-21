@@ -94,7 +94,6 @@ class CitationProcessor:
         except Exception as e:
             logger.error(f"Failed to parse citations: {e}")
             return []
-            return []
     
     @staticmethod
     def renumber_citations(content: str, citations: list[dict]) -> str:
@@ -944,11 +943,12 @@ def reporter_node(state: State, config: RunnableConfig):
     return {"final_report": updated_response_content, "citations": citations}
 
 
-def research_team_node(state: State):
-    """Research team node that collaborates on tasks."""
+def research_team_node(state: State) -> State:
+    """Research team node that acts as a coordinator/router for research and coder agents."""
     logger.info("Research team is collaborating on tasks.")
     logger.debug("Entering research_team_node - coordinating research and coder agents")
-    pass
+    # This node just passes through the state - actual routing is handled by conditional edges
+    return state
 
 
 async def _execute_agent_step(

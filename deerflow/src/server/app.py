@@ -450,9 +450,8 @@ async def _stream_graph_events(
             workflow_input,
             config=workflow_config,
             stream_mode=["messages", "updates"],
-            subgraphs=True,
         ):
-            event_count += 1
+            
             safe_agent = sanitize_agent_name(agent)
             logger.debug(f"[{safe_thread_id}] Graph event #{event_count} received from agent: {safe_agent}")
             
@@ -776,7 +775,6 @@ async def generate_prose(request: GenerateProseRequest):
                 "command": request.command,
             },
             stream_mode="messages",
-            subgraphs=True,
         )
         return StreamingResponse(
             (f"data: {event[0].content}\n\n" async for _, event in events),

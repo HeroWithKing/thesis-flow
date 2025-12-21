@@ -3,21 +3,29 @@
 
 import pytest
 
-from src.tools.search import get_web_search_tool
+from src.tools.search import get_web_search_tool, FallbackSearchTool
 
 
 class TestGetWebSearchTool:
-    def test_get_web_search_tool_arxiv(self):
-        """Test arxiv search tool initialization."""
+    def test_get_web_search_tool_initialization(self):
+        """Test web search tool initialization."""
         tool = get_web_search_tool(max_search_results=2)
         assert tool.name == "web_search"
-        assert tool.api_wrapper.top_k_results == 2
-        assert tool.api_wrapper.load_max_docs == 2
-        assert tool.api_wrapper.load_all_available_meta is True
+        assert isinstance(tool, FallbackSearchTool)
+        assert tool.max_results == 2
+        assert tool.fallback_threshold == 3
 
-    def test_get_web_search_tool_arxiv_with_different_results(self):
-        """Test arxiv search tool with different max_results."""
+    def test_get_web_search_tool_with_different_results(self):
+        """Test web search tool with different max_results."""
         tool = get_web_search_tool(max_search_results=10)
         assert tool.name == "web_search"
-        assert tool.api_wrapper.top_k_results == 10
-        assert tool.api_wrapper.load_max_docs == 10
+        assert tool.max_results == 10
+        assert isinstance(tool, FallbackSearchTool)
+
+    def test_fallback_search_tool_properties(self):
+        """Test FallbackSearchTool properties."""
+        tool = FallbackSearchTool(max_results=5, fallback_threshold=3)
+        assert tool.name == "web_search"
+        assert tool.max_results == 5
+        assert tool.fallback_threshold == 3
+        assert tool.description is not None
